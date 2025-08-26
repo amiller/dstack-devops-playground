@@ -28,6 +28,7 @@ Git clone relevant source code repos for source practice:
 - https://github.com/Dstack-TEE/dstack
 - https://github.com/Phala-Network/phala-cloud-cli
 - https://github.com/Phala-Network/phala-cloud-sdks
+- https://github.com/Dstack-TEE/dstack-examples
 
 The point is to familiarize you and your coding agents with how to use the phala cloud api for launching CVMs.
 I have checked in some notes already, but you're encouraged to send subagents to study the code again.
@@ -57,6 +58,22 @@ One-shot a modified application in the docker-compose
 ### Make a cleanup tool
 Make sure to set the "name" of repos launched during this session.
 Then you can make a cleanup tool to delete all these CVMs when you're done.
+
+Note: delete api not understanding so well from the sdk. Delete by CVM vs delete by App
+
+### Play with the SSH tool and gateway.
+
+Read the docs on how the dstack-gateway does subdomain-based routing of TLS/HTTP to different ports within a docker compose payload.
+
+The dstack-examples repo contains a ssh-over-gateway docker compose, with a readme showing how to configure SSH to connect over this tls/http channel.
+
+Add the ssh forwarding service to the existing docker-compose.
+
+Figure out the SSH one-line equivalent to the suggested .ssh/config settings.
+
+Launch a dstack CVM and ssh into it.
+
+Note: The "dev" instances have sshd running on the host vm. Can we modify the ssh-over-gateway example to provide ssh from the container instead?
 
 ### NFT-based access control
 
