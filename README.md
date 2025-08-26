@@ -61,6 +61,28 @@ Then you can make a cleanup tool to delete all these CVMs when you're done.
 
 Note: delete api not understanding so well from the sdk. Delete by CVM vs delete by App
 
+### Accessing CVM logs and info
+
+Each running CVM exposes an info service on port 8090. You can access:
+
+- **Node info**: `https://{app-id}-8090.dstack-{node}.phala.network/`
+- **Service logs**: `https://{app-id}-8090.dstack-{node}.phala.network/logs/{service}?text&bare&timestamps&tail=20`
+
+To find the correct URLs:
+1. Get App ID from `phala cvms list` 
+2. Identify node from the "Node Info URL" (e.g., `dstack-prod10` for prod10 node)
+3. Visit the root URL to see actual service names in the container table
+4. Use those service names (like `tapp-workload-1`) in the logs URL
+
+Example:
+```bash
+# Get CVM info page  
+curl https://ae8c818575426ef2a3f6f184296022c9db4f44c8-8090.dstack-prod10.phala.network/
+
+# Get logs for a specific service
+curl "https://ae8c818575426ef2a3f6f184296022c9db4f44c8-8090.dstack-prod10.phala.network/logs/tapp-workload-1?text&bare&timestamps&tail=20"
+```
+
 ### Play with the SSH tool and gateway.
 
 Read the docs on how the dstack-gateway does subdomain-based routing of TLS/HTTP to different ports within a docker compose payload.
