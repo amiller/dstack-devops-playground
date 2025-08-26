@@ -1,0 +1,9 @@
+[submodule "refs/dstack"]
+	path = refs/dstack
+	url = https://github.com/Dstack-TEE/dstack.git
+[submodule "refs/phala-cloud-cli"]
+	path = refs/phala-cloud-cli
+	url = https://github.com/Phala-Network/phala-cloud-cli.git
+[submodule "refs/phala-cloud-sdks"]
+	path = refs/phala-cloud-sdks
+	url = https://github.com/Phala-Network/phala-cloud-sdks.git
