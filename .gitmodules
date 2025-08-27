@@ -7,3 +7,6 @@
 [submodule "refs/phala-cloud-sdks"]
 	path = refs/phala-cloud-sdks
 	url = https://github.com/Phala-Network/phala-cloud-sdks.git
+[submodule "refs/dstack-examples"]
+	path = refs/dstack-examples
+	url = https://github.com/Dstack-TEE/dstack-examples.git
