@@ -1,0 +1,31 @@
+services:
+  counter-node:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        RUN pip install aiohttp==3.8.6 web3==6.11.3 eth-account==0.9.0 typing-extensions>=4.5.0
+        ENV PYTHONUNBUFFERED=1
+        WORKDIR /app
+    ports:
+      - "${NODE_PORT:-8080}:8080"
+    environment:
+      - INSTANCE_ID=${INSTANCE_ID:-node1}
+      - WALLET_PRIVATE_KEY=${WALLET_PRIVATE_KEY}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-0x5FbDB2315678afecb367f032d93F642f64180aa3}
+      - RPC_URL=${RPC_URL:-http://host.docker.internal:8545}
+      - NODE_PORT=${NODE_PORT:-8080}
+    volumes:
+      - ./counter.py:/app/counter.py
+    command: |
+      bash -c '
+      python /app/counter.py \
+        --instance-id "$INSTANCE_ID" \
+        --wallet "$WALLET_PRIVATE_KEY" \
+        --contract "$CONTRACT_ADDRESS" \
+        --rpc-url "$RPC_URL" \
+        --port 8080
+      '
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

@@ -1,113 +1,223 @@
-# Examples repo for devops practice on dstack, including on-chain kms
+# NFT-Gated DStack Node Cluster
 
-Dstack is a TEE framework for making decentralized applications out of confidential containers.
+A Byzantine fault-tolerant distributed system that uses NFT-based membership to control node deployment authorization in DStack clusters.
 
-Local docker environments is good enough for practice packaging applications as confidential containers.
-The web UI and basic commands are already good for launching single-server backends "in the TEE."
+## 🎯 Overview
 
-But, we need to build tools/experience for working with on-chain contracts and devops for multi-server and p2p backends.
-So this repo is a starter pack to close this gap.
+This project transforms DStack's unlimited deployment model into a scarcity-based network where **1 NFT = 1 authorized node deployment**. It implements:
 
-## Requirements
+- **NFT-based membership**: ERC721 tokens control node authorization
+- **Byzantine fault tolerance**: 2f+1 nodes with f+1 vote threshold for leader challenges
+- **Automatic leader election**: Democratic process with immediate failover
+- **Distributed consensus**: Leader handles writes, followers replicate state
 
-See .env.example.
+## 🏗️ Architecture
 
-- API for Phala cloud. All the command line tools use an API key, we may also look at playwright.
-- a "Base" wallet private key for deploying App contracts. Other evm blockchains included testnets should be supported too. The gas required should be minimal, fraction of a penny per deployment.
+### Core Components
 
-```
-PRIVATEKEY=0x...
-PHALA_CLOUD_API_KEY=phak_...
-RPC_URL=https://base.llamarpc.com
-```
+1. **DstackMembershipNFT Contract**: Combines DstackApp validation with ERC721 functionality
+2. **Distributed Counter Service**: Demo application showing consensus primitives
+3. **Byzantine Fault Tolerant Leader Election**: No timeout required, immediate challenges
+4. **Local Development Environment**: Anvil + Python for fast iteration
 
-## Context source repos set up
+### Byzantine Fault Tolerance
 
-Git clone relevant source code repos for source practice:
- (make them read only)
-- https://github.com/Dstack-TEE/dstack
-- https://github.com/Phala-Network/phala-cloud-cli
-- https://github.com/Phala-Network/phala-cloud-sdks
-- https://github.com/Dstack-TEE/dstack-examples
+- **Cluster Size**: Requires 2f+1 nodes where f is maximum failures
+- **Challenge Threshold**: f+1 votes needed to challenge current leader
+- **Immediate Challenges**: No timeout required - nodes vote when they detect unresponsiveness
+- **Democratic Process**: Any active node can vote no-confidence against current leader
+- **Automatic Failover**: Leader change triggered when f+1 votes accumulated
 
-The point is to familiarize you and your coding agents with how to use the phala cloud api for launching CVMs.
-I have checked in some notes already, but you're encouraged to send subagents to study the code again.
-- sdknotes.md
-- cli-notes.md
+## 🚀 Quick Start
 
-It seems like a good idea to mark these read only so your agent doesn't start editing in there.
-I would set up git submodules but I never remember how, from setup to cloning to updating.
+### Prerequisites
 
-## Suggested practice tasks
+- Python 3.8+
+- Anvil (local blockchain)
+- Web3.py and dependencies
 
-### List the cvms
+### 1. Clone and Setup
 
-Use both the command line tools and example scripts to list the available cvms and nodes. One-shot a javascript that selects a configuration with support for on-chain kms and a chain of your choice.
-
-### Launching sample applications
-Make a fresh copy of the phala-cloud-sdks/examples as myexamples.
-Compare deploy.ts there with the implementation of "deploy" command in the CLI.
-
-For example, this command launches with on-chain KMS enabled, replicate it with ts.
-```
-phala deploy --node-id 12 --kms-id kms-base-prod7 docker-compose.yml --rpc-url $RPC_URL --private-key $PRIVATEKEY
-```
-
-One-shot a modified application in the docker-compose
-
-### Make a cleanup tool
-Make sure to set the "name" of repos launched during this session.
-Then you can make a cleanup tool to delete all these CVMs when you're done.
-
-Note: delete api not understanding so well from the sdk. Delete by CVM vs delete by App
-
-### Accessing CVM logs and info
-
-Each running CVM exposes an info service on port 8090. You can access:
-
-- **Node info**: `https://{app-id}-8090.dstack-{node}.phala.network/`
-- **Service logs**: `https://{app-id}-8090.dstack-{node}.phala.network/logs/{service}?text&bare&timestamps&tail=20`
-
-To find the correct URLs:
-1. Get App ID from `phala cvms list` 
-2. Identify node from the "Node Info URL" (e.g., `dstack-prod10` for prod10 node)
-3. Visit the root URL to see actual service names in the container table
-4. Use those service names (like `tapp-workload-1`) in the logs URL
-
-Example:
 ```bash
-# Get CVM info page  
-curl https://ae8c818575426ef2a3f6f184296022c9db4f44c8-8090.dstack-prod10.phala.network/
-
-# Get logs for a specific service
-curl "https://ae8c818575426ef2a3f6f184296022c9db4f44c8-8090.dstack-prod10.phala.network/logs/tapp-workload-1?text&bare&timestamps&tail=20"
+git clone <repository-url>
+cd dstack-nft-cluster
+pip install -r requirements.txt
 ```
 
-### Play with the SSH tool and gateway.
+### 2. Start Local Environment
 
-Read the docs on how the dstack-gateway does subdomain-based routing of TLS/HTTP to different ports within a docker compose payload.
+```bash
+# Option A: Full automated setup
+./deploy_local.sh
 
-The dstack-examples repo contains a ssh-over-gateway docker compose, with a readme showing how to configure SSH to connect over this tls/http channel.
+# Option B: Manual setup
+anvil --host 0.0.0.0 --port 8545 &
+python3 deploy_contract.py
+./start_counters.sh
+```
 
-Add the ssh forwarding service to the existing docker-compose.
+### 3. Test the Cluster
 
-Figure out the SSH one-line equivalent to the suggested .ssh/config settings.
+```bash
+./test_cluster.sh
+```
 
-Launch a dstack CVM and ssh into it.
+## 📁 Project Structure
 
-Note: The "dev" instances have sshd running on the host vm. Can we modify the ssh-over-gateway example to provide ssh from the container instead?
+```
+dstack-nft-cluster/
+├── contracts/                 # Smart contract source
+│   ├── src/
+│   │   └── DstackMembershipNFT.sol
+│   └── test/
+│       └── DstackMembershipNFT.t.sol
+├── counter.py                 # Distributed counter service
+├── deploy_contract.py         # Contract deployment script
+├── deploy_local.sh            # Full environment setup
+├── start_counters.sh          # Start counter services
+├── test_cluster.sh            # Test cluster functionality
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
+```
 
-### NFT-based access control
+## 🔧 Development
 
-See nft-auth-nodes.md 
+### Smart Contract Development
 
-## Still todo
+The `DstackMembershipNFT` contract combines:
+- **DstackApp interface**: For KMS validation
+- **ERC721 functionality**: NFT-based membership
+- **Leader election logic**: Byzantine fault tolerant consensus
 
-This hasn't incorporated the dstack simulator yet, this should be a path to develop on-chain KMS.
+```solidity
+contract DstackMembershipNFT is DstackApp, ERC721 {
+    // Instance management
+    mapping(uint256 => bytes32) public tokenToInstance;
+    mapping(bytes32 => uint256) public instanceToToken;
+    
+    // Byzantine fault tolerant leader election
+    address public currentLeader;
+    mapping(address => uint256) public noConfidenceCount;
+    uint256 public requiredVotes;
+    
+    function castVote(address target, bool isNoConfidence) external;
+    function electLeader() external;
+    function isAppAllowed(AppBootInfo calldata bootInfo) external view override;
+}
+```
 
-Nerla's code uses kurtosis and should be studied
-https://github.com/njeans/dstack/tree/update-demo
+### Counter Service
 
-Self hosting instructions. If you have a tdx machine you should be able to run dstack fully, though the phala cloud api itself.
+The distributed counter demonstrates:
+- **HTTP API**: REST endpoints for operations
+- **Leader election**: One NFT holder becomes write leader
+- **Strong consistency**: All writes through leader, replicated to followers
+- **Automatic failover**: New leader election when current fails
 
-It also hasn't incorporated test blockchain networks.
+```python
+class DistributedCounter:
+    async def monitor_leader_health(self):
+        """Monitor leader health and participate in consensus"""
+        current_leader = await self.contract.call("currentLeader()")
+        
+        if current_leader == self.wallet_address:
+            self.is_leader = True
+        else:
+            # Check if leader is responsive
+            is_responsive = await self.ping_leader(current_leader)
+            if not is_responsive:
+                await self.vote_no_confidence(current_leader)
+```
+
+## 🧪 Testing
+
+### Local Testing
+
+```bash
+# Start 3-node cluster
+./start_counters.sh
+
+# Test consensus
+curl -X POST http://localhost:8081/increment
+curl http://localhost:8082/counter
+curl http://localhost:8083/counter
+
+# Check cluster status
+curl http://localhost:8081/status
+```
+
+### Byzantine Fault Tolerance Test
+
+```bash
+# Simulate leader failure
+sudo iptables -A INPUT -p tcp --dport 8081 -j DROP
+
+# Wait for failover (should happen in ~10 seconds)
+sleep 15
+
+# Check new leader
+curl http://localhost:8082/status
+```
+
+## 🔄 Development Phases
+
+### Phase 1: Local Development ✅
+- [x] Smart contract with Forge
+- [x] Anvil local blockchain
+- [x] Python counter application
+- [x] Basic consensus testing
+
+### Phase 2: Docker Integration (Next)
+- [ ] Anvil in container
+- [ ] Real KMS validation
+- [ ] Compose hash validation
+- [ ] Full deployment pipeline
+
+### Phase 3: Phala Cloud Production
+- [ ] Base mainnet deployment
+- [ ] Phala-hosted KMS
+- [ ] Real TEE nodes
+- [ ] Production scaling
+
+## 🎓 Learning Outcomes
+
+This project demonstrates key distributed systems concepts:
+
+1. **Consensus Algorithms**: Byzantine fault tolerance in practice
+2. **Leader Election**: Democratic process with automatic failover
+3. **State Replication**: Leader handles writes, followers replicate
+4. **Failure Detection**: Health monitoring and voting mechanisms
+5. **Smart Contract Integration**: Blockchain-based membership control
+
+## 🔮 Future Extensions
+
+- **PostgreSQL Clustering**: Replace counter with real database
+- **Multi-cluster Support**: Different NFT collections for different clusters
+- **Resource-based NFTs**: Different tiers for different node sizes
+- **Governance Integration**: NFT holder voting for cluster configuration
+- **Cross-chain Support**: Multi-blockchain cluster coordination
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- **DStack**: For the underlying infrastructure
+- **OpenZeppelin**: For secure smart contract libraries
+- **Foundry**: For smart contract development tools
+- **Phala Network**: For TEE infrastructure
+
+---
+
+**Ready to build the future of decentralized infrastructure?** 🚀
+
+Start with `./deploy_local.sh` and experience Byzantine fault tolerance in action!

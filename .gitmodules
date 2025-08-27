@@ -7,3 +7,12 @@
 [submodule "refs/phala-cloud-sdks"]
 	path = refs/phala-cloud-sdks
 	url = https://github.com/Phala-Network/phala-cloud-sdks.git
+[submodule "refs/dstack-examples"]
+	path = refs/dstack-examples
+	url = https://github.com/Dstack-TEE/dstack-examples.git
+[submodule "contracts/lib/forge-std"]
+	path = contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "contracts/lib/openzeppelin-contracts"]
+	path = contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
