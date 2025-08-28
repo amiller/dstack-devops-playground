@@ -1,0 +1,196 @@
+# Foundry with Docker - Working Guide
+
+This guide shows how to use Foundry with Docker, working around GLIBC compatibility issues on older Linux distributions.
+
+## Quick Setup
+
+### 1. Tag the Docker Image (One-time setup)
+
+```bash
+docker tag ghcr.io/foundry-rs/foundry:latest foundry:latest
+```
+
+This creates a convenient alias for the full image name.
+
+### 2. Verify Foundry Works
+
+```bash
+docker run foundry "forge --version"
+```
+
+You should see Foundry version information.
+
+## Working Commands
+
+### Build Contracts
+
+```bash
+docker run -v $PWD/contracts:/app -w /app foundry "forge build"
+```
+
+**Important**: This mounts the entire `contracts/` directory (including `lib/` dependencies) to `/app` in the container.
+
+### Run Tests
+
+```bash
+docker run -v $PWD/contracts:/app -w /app foundry "forge test"
+```
+
+### Run Tests with Verbose Output
+
+```bash
+docker run -v $PWD/contracts:/app -w /app foundry "forge test -vvv"
+```
+
+## Local Development with Anvil
+
+When connecting to local services (like Anvil), use the `--network host` flag:
+
+```bash
+# Start Anvil
+docker run -d --name anvil-local -p 8545:8545 foundry "anvil --host 0.0.0.0 --port 8545 --accounts 10 --balance 10000"
+
+# Deploy (note --network host)
+docker run -v $PWD/contracts:/app -w /app -e PRIVATE_KEY=your_key --network host foundry "forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast"
+
+# Interact with contract
+docker run --network host foundry "cast call 0x... 'function()' --rpc-url http://localhost:8545"
+```
+
+### Deploy Contracts
+
+First, start a local Anvil node:
+
+```bash
+docker run -d --name anvil-local -p 8545:8545 foundry "anvil --host 0.0.0.0 --port 8545 --accounts 10 --balance 10000"
+```
+
+Then deploy using your deployment script:
+
+```bash
+docker run -v $PWD/contracts:/app -w /app -e PRIVATE_KEY=your_key --network host foundry "forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast"
+```
+
+**Note**: You'll need to set the `PRIVATE_KEY` environment variable in the container.
+
+### Stop Anvil
+
+```bash
+docker stop anvil-local
+docker rm anvil-local
+```
+
+## Important: OpenZeppelin Version Compatibility
+
+- **OpenZeppelin 5.x**: `Counters.sol` utility is deprecated and removed
+- **Ownable constructor**: Now requires `initialOwner` parameter  
+- **Use simple uint256**: Replace `Counters.Counter` with `uint256` variables
+
+## Complete Working Example
+
+```bash
+# 1. Tag the image
+docker tag ghcr.io/foundry-rs/foundry:latest foundry:latest
+
+# 2. Build contracts
+docker run -v $PWD/contracts:/app -w /app foundry "forge build"
+
+# 3. Start Anvil
+docker run -d --name anvil-local -p 8545:8545 foundry "anvil --host 0.0.0.0 --port 8545 --accounts 10 --balance 10000"
+
+# 4. Deploy (use host network)
+docker run -v $PWD/contracts:/app -w /app -e PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --network host foundry "forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast"
+
+# 5. Interact with contract
+docker run --network host foundry "cast call 0x5FbDB2315678afecb367f032d93F642f64180aa3 'name()' --rpc-url http://localhost:8545 | cast --to-ascii"
+```
+
+## Why This Works
+
+The key insight is **proper volume mounting**:
+
+- `-v $PWD/contracts:/app` mounts the entire contracts directory
+- `-w /app` sets the working directory inside the container
+- This ensures all dependencies in `contracts/lib/` are available
+
+## Common Issues & Solutions
+
+### Issue: "Source not found" errors
+**Solution**: Make sure you're mounting the entire `contracts/` directory, not just `contracts/src/`
+
+### Issue: Commands hang or fail silently
+**Solution**: Add quotes around the forge command: `"forge build"` not `forge build`
+
+### Issue: Permission errors
+**Solution**: Make sure Docker has access to your project directory
+
+### Issue: "Connection refused" errors
+**Solution**: Use `--network host` when connecting to localhost from Docker
+
+## Troubleshooting
+
+### "Connection refused" errors
+- Use `--network host` when connecting to localhost from Docker
+- Ensure Anvil is running: `docker ps | grep anvil-local`
+
+### "Source not found" errors  
+- Verify entire `contracts/` directory is mounted
+- Check that `lib/` dependencies exist
+
+### Commands hanging
+- Always quote forge commands: `"forge build"` not `forge build`
+
+## Alternative: Dockerfile Approach
+
+For more complex deployments, create a `Dockerfile` in your contracts directory:
+
+```dockerfile
+FROM ghcr.io/foundry-rs/foundry
+WORKDIR /app
+COPY . .
+RUN forge build
+RUN forge test
+```
+
+Build and run:
+```bash
+docker build -t my-contracts .
+docker run my-contracts
+```
+
+## Environment Variables
+
+For deployment scripts that need environment variables:
+
+```bash
+docker run -v $PWD/contracts:/app -w /app -e PRIVATE_KEY=your_key_here --network host foundry "forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast"
+```
+
+## Benefits
+
+✅ **No GLIBC Issues** - Works on any Linux distribution  
+✅ **Official Images** - Uses Foundry's official Docker image  
+✅ **Proper Dependencies** - All lib/ dependencies are available  
+✅ **Simple Commands** - Direct Docker commands without wrapper scripts  
+✅ **Reproducible** - Same environment everywhere  
+
+## What Doesn't Work
+
+❌ **Partial Mounting** - `-v $PWD/contracts/src:/app` (missing dependencies)  
+❌ **Missing Working Directory** - Without `-w /app`  
+❌ **Unquoted Commands** - `forge build` instead of `"forge build"`  
+❌ **Missing Network Host** - Container can't reach host's localhost:8545  
+
+## Testing Your Setup
+
+1. **Test Build**: `docker run -v $PWD/contracts:/app -w /app foundry "forge build"`
+2. **Test Tests**: `docker run -v $PWD/contracts:/app -w /app foundry "forge test"`
+3. **Check Output**: `ls -la contracts/out/` should show compiled contracts
+
+## Next Steps
+
+Once you have the basic commands working:
+- Set up environment variables for deployment
+- Create deployment scripts
+- Set up CI/CD with Docker
+- Use the Dockerfile approach for production deployments
