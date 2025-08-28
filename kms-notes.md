@@ -11,48 +11,22 @@ This document provides a comprehensive analysis of the dstack Key Management Sys
 The dstack KMS implements a three-tier architecture for secure key management in TEE environments:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    Ethereum Mainnet                                                    │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                   Smart Contracts                                                 │ │
-│  │  • DstackKms.sol (registry) - Global registry for KMS instances, device IDs, OS images           │ │
-│  │  • DstackApp.sol (per-app) - Application access control and compose hash validation               │ │
-│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                     │
-                                                     │ Validation Queries
-                                                     ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   KMS Infrastructure                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │         dstack-kms                    │            dstack-kms-auth-eth                            │ │
-│  │  • Key derivation service             │  • Blockchain interface                                  │ │
-│  │  • TDX quote verification             │  • Smart contract queries                                │ │
-│  │  • Hardware attestation validation    │  • Permission validation                                 │ │
-│  │  • Key replication across instances   │  • App authorization checks                              │ │
-│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                     │
-                                                     │ RA-TLS (Boot-time Key Request)
-                                                     ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                Intel TDX CVM (Per Application)                                        │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                             dstack-guest-agent                                                    │ │
-│  │  • App key storage (CA cert, K256, disk/env keys)  • TLS certificate generation                  │ │
-│  │  • Hierarchical key derivation with signature chains • TDX quote generation                      │ │
-│  │  • Unix socket API (/var/run/dstack.sock)          • Custom event logging (RTMR3)               │ │
-│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                     │                                                   │
-│                                                     │ Unix Socket API                                   │
-│                                                     ▼                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                 User Application                                                   │ │
-│  │  • Python/Go SDK for key operations               • Business logic implementation                 │ │
-│  │  • get_key(), get_tls_key(), get_quote()          • Cryptographic operations (signing, TLS)      │ │
-│  │  • Application-specific key derivation paths      • TEE instance info and attestation            │ │
-│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐    ┌─────────────────────────────────────────┐
+│           Smart Contracts               │    │          KMS Infrastructure             │
+│  • DstackKms.sol (registry)             │◄───┤  • dstack-kms (key derivation)          │
+│  • DstackApp.sol (per-app control)      │    │  • dstack-kms-auth-eth (blockchain)     │
+│  • Device & app authorization           │    │  • Quote verification & replication     │
+└─────────────────────────────────────────┘    └─────────────────────────────────────────┘
+                                                                   │
+                                                                   │ RA-TLS (boot-time)
+                                                                   ▼
+┌─────────────────────────────────────────┐    ┌─────────────────────────────────────────┐
+│         dstack-guest-agent              │    │          User Application               │
+│  • App key storage & derivation         │◄───┤  • Python/Go SDK                       │
+│  • TLS cert generation                  │    │  • get_key(), get_tls_key()             │
+│  • Unix socket (/var/run/dstack.sock)   │    │  • Business logic & crypto ops         │
+└─────────────────────────────────────────┘    └─────────────────────────────────────────┘
+        Intel TDX CVM (TEE Boundary)
 ```
 
 ### Core Components
@@ -101,14 +75,13 @@ The following sequence illustrates how applications acquire keys at startup:
        │ 5. Store keys &   │                   │                    │
        │ start Unix socket │                   │                    │
        │                   │                   │                    │
+       │                   │                   │                    │
        │                   │                   │ 6. App requests    │
        │                   │                   │ derived keys       │
-       │                   │                   │ ←──────────────────│
-       │                   │                   │                    │
-       │ 7. Derive keys    │                   │                    │
+       │ 7. Derive keys    │                   │ ←──────────────────│
        │ (with signature   │                   │                    │
        │ chains)           │                   │                    │
-       │ ←──────────────────────────────────────────────────────────│
+       │ ←─────────────────────────────────────────────────────────│
 ```
 
 #### Key Points:
