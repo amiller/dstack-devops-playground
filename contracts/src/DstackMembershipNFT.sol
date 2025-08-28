@@ -28,6 +28,9 @@ contract DstackMembershipNFT is ERC721, Ownable, IDstackApp {
     mapping(bytes32 => bool) public activeInstances;        // instanceID → active
     mapping(address => uint256) public walletToTokenId;     // wallet → tokenId
     
+    // KMS attestation verification
+    address public kmsRootAddress;
+    
     function totalSupply() public view returns (uint256) {
         return _totalSupply;
     }
@@ -55,9 +58,17 @@ contract DstackMembershipNFT is ERC721, Ownable, IDstackApp {
     event LeaderChallenged(address indexed newLeader, address indexed oldLeader, uint256 voteCount);
     event InstanceRegistered(bytes32 indexed instanceId, uint256 indexed tokenId);
     event InstanceDeactivated(bytes32 indexed instanceId);
+    event KmsRootUpdated(address indexed oldRoot, address indexed newRoot);
     
-    constructor() ERC721("DStack Membership NFT", "DSTACK") Ownable(msg.sender) {
+    constructor(address _kmsRootAddress) ERC721("DStack Membership NFT", "DSTACK") Ownable(msg.sender) {
         _tokenIds = 1; // Start from token ID 1
+        kmsRootAddress = _kmsRootAddress;
+    }
+    
+    function setKmsRootAddress(address _newKmsRoot) external onlyOwner {
+        address oldRoot = kmsRootAddress;
+        kmsRootAddress = _newKmsRoot;
+        emit KmsRootUpdated(oldRoot, _newKmsRoot);
     }
     
     function mintNodeAccess(address to, string memory name) external onlyOwner returns (uint256) {
@@ -83,6 +94,95 @@ contract DstackMembershipNFT is ERC721, Ownable, IDstackApp {
         
         emit InstanceRegistered(instanceId, tokenId);
         updateClusterSize();
+    }
+    
+    function registerInstanceWithProof(
+        bytes32 instanceId, 
+        uint256 tokenId,
+        bytes memory derivedPublicKey,
+        bytes memory appSignature,
+        bytes memory kmsSignature,
+        string memory purpose,
+        bytes32 appId
+    ) external {
+        require(ownerOf(tokenId) == msg.sender, "Must own NFT");
+        require(instanceToToken[instanceId] == 0, "Instance already registered");
+        require(tokenToInstance[tokenId] == bytes32(0), "Token already has instance");
+        
+        // Verify signature chain proves KMS attestation
+        require(
+            verifySignatureChain(
+                appId,
+                derivedPublicKey,
+                appSignature,
+                kmsSignature,
+                purpose
+            ),
+            "Invalid attestation proof"
+        );
+        
+        tokenToInstance[tokenId] = instanceId;
+        instanceToToken[instanceId] = tokenId;
+        activeInstances[instanceId] = true;
+        
+        emit InstanceRegistered(instanceId, tokenId);
+        updateClusterSize();
+    }
+    
+    function verifySignatureChain(
+        bytes32 appId,
+        bytes memory derivedPublicKey,
+        bytes memory appSignature,
+        bytes memory kmsSignature,
+        string memory purpose
+    ) public view returns (bool) {
+        // Step 1: Recover app public key from app signature
+        bytes32 derivedKeyMessage = keccak256(abi.encodePacked(purpose, ":", _toHex(derivedPublicKey)));
+        
+        // Split signature into v, r, s components using assembly
+        require(appSignature.length == 65, "Invalid app signature length");
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+        
+        assembly {
+            r := mload(add(appSignature, 32))
+            s := mload(add(appSignature, 64))
+            v := byte(0, mload(add(appSignature, 96)))
+        }
+        
+        address appPublicKey = ecrecover(derivedKeyMessage, v, r, s);
+        
+        // Step 2: Verify KMS signature over app key
+        bytes32 kmsMessage = keccak256(abi.encodePacked("dstack-kms-issued:", appId, abi.encodePacked(appPublicKey)));
+        
+        // Split KMS signature into v, r, s components
+        require(kmsSignature.length == 65, "Invalid KMS signature length");
+        uint8 kmsV;
+        bytes32 kmsR;
+        bytes32 kmsS;
+        
+        assembly {
+            kmsR := mload(add(kmsSignature, 32))
+            kmsS := mload(add(kmsSignature, 64))
+            kmsV := byte(0, mload(add(kmsSignature, 96)))
+        }
+        
+        address recoveredKMS = ecrecover(kmsMessage, kmsV, kmsR, kmsS);
+        
+        return recoveredKMS == kmsRootAddress;
+    }
+    
+    function _toHex(bytes memory data) internal pure returns (string memory) {
+        bytes memory alphabet = "0123456789abcdef";
+        bytes memory str = new bytes(2 + data.length * 2);
+        str[0] = "0";
+        str[1] = "x";
+        for (uint256 i = 0; i < data.length; i++) {
+            str[2 + i * 2] = alphabet[uint8(data[i] >> 4)];
+            str[2 + i * 2 + 1] = alphabet[uint8(data[i] & 0x0f)];
+        }
+        return string(str);
     }
     
     function deactivateInstance(bytes32 instanceId) external {

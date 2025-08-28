@@ -7,12 +7,14 @@ import "../src/DstackMembershipNFT.sol";
 contract DeployScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address kmsRootAddress = vm.envAddress("KMS_ROOT_ADDRESS");
         
         vm.startBroadcast(deployerPrivateKey);
         
-        DstackMembershipNFT nft = new DstackMembershipNFT();
+        DstackMembershipNFT nft = new DstackMembershipNFT(kmsRootAddress);
         
         console.log("DstackMembershipNFT deployed at:", address(nft));
+        console.log("KMS Root Address:", kmsRootAddress);
         
         // Mint NFTs for test accounts
         address[] memory testAccounts = new address[](3);
