@@ -6,29 +6,119 @@ This document provides a comprehensive analysis of the dstack Key Management Sys
 
 ## Architecture Analysis
 
+### System Overview
+
+The dstack KMS implements a three-tier architecture for secure key management in TEE environments:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    Ethereum Mainnet                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                                   Smart Contracts                                                 │ │
+│  │  • DstackKms.sol (registry) - Global registry for KMS instances, device IDs, OS images           │ │
+│  │  • DstackApp.sol (per-app) - Application access control and compose hash validation               │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                     │
+                                                     │ Validation Queries
+                                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   KMS Infrastructure                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │         dstack-kms                    │            dstack-kms-auth-eth                            │ │
+│  │  • Key derivation service             │  • Blockchain interface                                  │ │
+│  │  • TDX quote verification             │  • Smart contract queries                                │ │
+│  │  • Hardware attestation validation    │  • Permission validation                                 │ │
+│  │  • Key replication across instances   │  • App authorization checks                              │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                     │
+                                                     │ RA-TLS (Boot-time Key Request)
+                                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                Intel TDX CVM (Per Application)                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                             dstack-guest-agent                                                    │ │
+│  │  • App key storage (CA cert, K256, disk/env keys)  • TLS certificate generation                  │ │
+│  │  • Hierarchical key derivation with signature chains • TDX quote generation                      │ │
+│  │  • Unix socket API (/var/run/dstack.sock)          • Custom event logging (RTMR3)               │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                     │                                                   │
+│                                                     │ Unix Socket API                                   │
+│                                                     ▼                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                                 User Application                                                   │ │
+│  │  • Python/Go SDK for key operations               • Business logic implementation                 │ │
+│  │  • get_key(), get_tls_key(), get_quote()          • Cryptographic operations (signing, TLS)      │ │
+│  │  • Application-specific key derivation paths      • TEE instance info and attestation            │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Core Components
 
-1. **dstack-kms** (`refs/dstack/kms/src/main_service.rs`)
-   - Main RPC service for app key requests
-   - Quote verification and boot info validation  
-   - Delegates permission checks to `dstack-kms-auth-eth`
-   - Built-in key replication capabilities
+1. **Smart Contract Layer (Ethereum)**
+   - **DstackKms.sol**: Global registry for authorized KMS instances, device IDs, and OS images
+   - **DstackApp.sol**: Per-application access control and compose hash validation
+   - Provides blockchain-based governance and permission management
 
-2. **dstack-guest-agent** (`guest-agent/src/rpc_service.rs`)
-   - TEE-resident service managing cryptographic operations
-   - Mediates between applications and KMS
-   - Provides key derivation, TLS certificates, and attestation quotes
-   - Exposes Unix socket API (`/var/run/dstack.sock`) to applications
+2. **KMS Infrastructure Layer**
+   - **dstack-kms**: Central key management service with quote verification and key derivation
+   - **dstack-kms-auth-eth**: Blockchain validation interface for smart contract queries
+   - Runs on trusted infrastructure, handles key replication across authorized instances
 
-3. **dstack-kms-auth-eth** (`refs/dstack/kms/auth-eth/`)
-   - Ethereum smart contract interface for permission validation
-   - Two-step validation process:
-     - KMS control contract check (`DstackKms.sol`)
-     - App control contract check (`DstackApp.sol`)
+3. **Application TEE Layer (Intel TDX CVM)**
+   - **dstack-guest-agent**: TEE-resident service managing all cryptographic operations
+   - **User Application**: The actual application logic using cryptographic services
+   - Both components run within the same TEE boundary for maximum security
 
-4. **Smart Contracts**
-   - `DstackKms.sol`: Registry for KMS instances, OS images, and applications
-   - `DstackApp.sol`: Per-application access control and compose hash validation
+### Boot Sequence and Key Acquisition
+
+The following sequence illustrates how applications acquire keys at startup:
+
+```
+┌─────────────┐    ┌──────────────┐    ┌───────────────┐    ┌─────────────┐
+│    CVM      │    │ dstack-kms   │    │ Smart         │    │ Application │
+│ Guest Agent │    │   Service    │    │ Contracts     │    │             │
+└─────────────┘    └──────────────┘    └───────────────┘    └─────────────┘
+       │                   │                    │                    │
+       │ 1. Boot & Request Keys                 │                    │
+       │ (with TDX quote)   │                   │                    │
+       ├──────────────────→ │                   │                    │
+       │                   │                   │                    │
+       │                   │ 2. Validate Quote │                    │
+       │                   │ & Check Permissions                    │
+       │                   ├─────────────────→ │                    │
+       │                   │                   │                    │
+       │                   │ 3. Permissions OK │                    │
+       │                   │ ←─────────────────│                    │
+       │                   │                   │                    │
+       │ 4. App Keys       │                   │                    │
+       │ (CA cert, K256,   │                   │                    │
+       │  disk/env keys)   │                   │                    │
+       │ ←──────────────────│                   │                    │
+       │                   │                   │                    │
+       │ 5. Store keys &   │                   │                    │
+       │ start Unix socket │                   │                    │
+       │                   │                   │                    │
+       │                   │                   │ 6. App requests    │
+       │                   │                   │ derived keys       │
+       │                   │                   │ ←──────────────────│
+       │                   │                   │                    │
+       │ 7. Derive keys    │                   │                    │
+       │ (with signature   │                   │                    │
+       │ chains)           │                   │                    │
+       │ ←──────────────────────────────────────────────────────────│
+```
+
+#### Key Points:
+
+1. **Boot-time Only**: Applications request keys from KMS only once during CVM initialization
+2. **TEE Co-location**: Guest agent and application run in the same Intel TDX CVM
+3. **Hardware Attestation**: TDX quotes prove the CVM's integrity to the KMS
+4. **Blockchain Validation**: Smart contracts authorize specific app configurations
+5. **Local Key Operations**: All subsequent key derivation happens within the TEE via Unix socket
+6. **Signature Chains**: Every derived key includes cryptographic proof of KMS authorization
 
 ## Cryptographic Implementation Analysis
 
